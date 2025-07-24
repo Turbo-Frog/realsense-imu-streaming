@@ -1,189 +1,281 @@
-# realsense-imu-streaming
-Goal: Stream real-time video and IMU sensor data from a RealSense D435i camera connected to a Raspberry Pi 4 over WiFi to a remote device or application.
+# RealSense D435i Web Streaming Setup
 
-# RealSense D435i IMU Streaming
+## Requirements (requirements.txt)
+```txt
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+opencv-python==4.8.1.78
+numpy==1.24.3
+pyrealsense2==2.54.1
+python-multipart==0.0.6
+```
 
-A simple Python implementation for streaming IMU data (accelerometer and gyroscope) from Intel RealSense D435i camera over WiFi using UDP protocol.
+## Installation Steps
 
-## Hardware Requirements
-
-- Intel RealSense D435i camera
-- Raspberry Pi 4 Model B (or any Linux/Windows machine)
-- WiFi network connection
-
-## Software Requirements
-
-- Python 3.7+
-- Intel RealSense SDK (librealsense2)
-- Required Python packages (see requirements.txt)
-
-## Installation
-
-### 1. Install Intel RealSense SDK
-
-**On Ubuntu/Raspberry Pi:**
+### 1. System Dependencies (Raspberry Pi 4)
 ```bash
-# Add Intel server to the list of repositories
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install system dependencies
+sudo apt install -y python3-pip python3-venv git cmake build-essential
+
+# Install OpenCV dependencies
+sudo apt install -y libopencv-dev python3-opencv
+
+# Install RealSense SDK dependencies
+sudo apt install -y libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev
+sudo apt install -y libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
+```
+
+### 2. RealSense SDK Installation
+```bash
+# Add Intel RealSense repository
 sudo mkdir -p /etc/apt/keyrings
-curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp | sudo tee /etc/apt/keyrings/librealsense.pgp > /dev/null
+curl -sSf https://librealsense.intel.com/Debian/apt-repo/conf/librealsense.public.key | sudo tee /etc/apt/keyrings/librealsense.pgp > /dev/null
+
 echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] https://librealsense.intel.com/Debian/apt-repo `lsb_release -cs` main" | sudo tee /etc/apt/sources.list.d/librealsense.list
-sudo apt-get update
 
-# Install the libraries
-sudo apt-get install librealsense2-dkms
-sudo apt-get install librealsense2-utils
-sudo apt-get install librealsense2-dev
-sudo apt-get install librealsense2-dbg
+sudo apt update
+
+# Install RealSense SDK
+sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
 ```
 
-**On Windows:**
-Download and install from [Intel RealSense SDK Releases](https://github.com/IntelRealSense/librealsense/releases)
-
-### 2. Install Python Dependencies
-
+### 3. Python Environment Setup
 ```bash
-pip install -r requirements.txt
+# Create project directory
+mkdir ~/realsense_streamer
+cd ~/realsense_streamer
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python packages
+pip install --upgrade pip
+pip install fastapi uvicorn[standard] websockets opencv-python numpy pyrealsense2 python-multipart
 ```
 
-## Project Structure
+### 4. Project Files
+Create the following files in your project directory:
 
-```
-realsense-imu-streaming/
-├── README.md
-├── requirements.txt
-├── server/
-│   ├── __init__.py
-│   ├── imu_server.py
-│   └── realsense_interface.py
-├── client/
-│   ├── __init__.py
-│   ├── imu_client.py
-│   └── visualizer.py
-├── config/
-│   └── config.py
-├── examples/
-│   ├── basic_streaming.py
-│   └── data_logging.py
-└── tests/
-    ├── test_server.py
-    └── test_client.py
-```
+1. **main.py** - The Python server (from first artifact)
+2. **web_interface.html** - The web interface (from second artifact)
 
-## Quick Start
-
-### 1. Start the IMU Server (on Raspberry Pi)
-
+### 5. USB Permissions (Important!)
 ```bash
-cd server
-python imu_server.py --host 0.0.0.0 --port 8888
+# Add USB rules for RealSense
+sudo tee /etc/udev/rules.d/99-realsense-libusb.rules > /dev/null <<EOF
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", ATTRS{idProduct}=="0b07", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", ATTRS{idProduct}=="0b3a", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", ATTRS{idProduct}=="0b5c", GROUP="plugdev"
+EOF
+
+# Add user to plugdev group
+sudo usermod -a -G plugdev $USER
+
+# Reload udev rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Reboot or logout/login for group changes to take effect
 ```
 
-### 2. Start the IMU Client (on remote device)
+## Running the Server
 
+### 1. Test RealSense Connection
 ```bash
-cd client
-python imu_client.py --server-ip <RASPBERRY_PI_IP> --port 8888
+# Test if camera is detected
+rs-enumerate-devices
+
+# Test camera streaming (optional)
+realsense-viewer
 ```
 
-### 3. View Real-time IMU Data
-
+### 2. Start the Web Server
 ```bash
-cd client
-python visualizer.py --server-ip <RASPBERRY_PI_IP> --port 8888
+cd ~/realsense_streamer
+source venv/bin/activate
+python main.py
 ```
 
-## Configuration
+### 3. Access the Web Interface
+- The server will display the local IP address when starting
+- Access via: `http://[PI_IP_ADDRESS]:8000`
+- Example: `http://192.168.1.100:8000`
 
-Edit `config/config.py` to customize:
-- IMU sampling rates (default: 200Hz)
-- Network settings
-- Data format options
-- Logging preferences
+## Network Configuration
 
-## API Reference
+### Find Your Pi's IP Address
+```bash
+# Method 1: ip command
+ip addr show wlan0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1
 
-### Server API
+# Method 2: hostname command
+hostname -I
 
+# Method 3: ifconfig (if available)
+ifconfig wlan0 | grep 'inet ' | awk '{print $2}'
+```
+
+### Port Configuration
+- **Default Port**: 8000
+- **WebSocket**: Same port, `/ws` endpoint
+- **Status API**: Same port, `/status` endpoint
+
+### Firewall Settings (if needed)
+```bash
+# Allow port 8000
+sudo ufw allow 8000/tcp
+
+# Or disable firewall temporarily for testing
+sudo ufw disable
+```
+
+## Performance Optimization
+
+### 1. Raspberry Pi 4 Settings
+```bash
+# Increase GPU memory split
+echo 'gpu_mem=128' | sudo tee -a /boot/config.txt
+
+# Enable hardware acceleration
+echo 'dtoverlay=vc4-kms-v3d' | sudo tee -a /boot/config.txt
+
+# Reboot after changes
+sudo reboot
+```
+
+### 2. System Monitoring
+```bash
+# Monitor system resources
+htop
+
+# Monitor temperature
+vcgencmd measure_temp
+
+# Monitor network usage
+iftop
+```
+
+### 3. Adjust Stream Quality
+In `main.py`, modify these parameters for performance:
 ```python
-from server.imu_server import IMUServer
+# JPEG quality (50-95, lower = smaller files)
+cv2.IMWRITE_JPEG_QUALITY, 80
 
-server = IMUServer(host='0.0.0.0', port=8888)
-server.start()
+# Frame queue size (smaller = lower latency)
+self.ir_frame_queue = queue.Queue(maxsize=5)
+
+# WebSocket delay (smaller = higher CPU usage)
+await asyncio.sleep(0.033)  # ~30 FPS
 ```
-
-### Client API
-
-```python
-from client.imu_client import IMUClient
-
-client = IMUClient(server_ip='192.168.1.100', port=8888)
-client.connect()
-data = client.get_imu_data()
-```
-
-## Data Format
-
-IMU data is transmitted as JSON over UDP:
-
-```json
-{
-  "timestamp": 1234567890.123,
-  "accelerometer": {
-    "x": 0.123,
-    "y": -0.456,
-    "z": 9.789
-  },
-  "gyroscope": {
-    "x": 0.001,
-    "y": -0.002,
-    "z": 0.003
-  },
-  "frame_number": 12345
-}
-```
-
-## Performance
-
-- **Bandwidth**: ~50 KB/s at 200Hz sampling rate
-- **Latency**: <10ms over local WiFi
-- **Reliability**: UDP with optional packet loss detection
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Camera not detected**: Check USB connection and permissions
-2. **Network connection failed**: Verify IP address and firewall settings
-3. **High latency**: Check WiFi signal strength and network congestion
+1. **"No device connected" error**
+   - Check USB connection
+   - Verify USB permissions
+   - Try different USB port
+   - Check `lsusb` output
 
-### Debug Mode
+2. **High CPU usage**
+   - Reduce JPEG quality
+   - Increase WebSocket delay
+   - Lower frame rate in RealSense config
 
-Enable debug output:
+3. **Network lag**
+   - Check WiFi signal strength
+   - Reduce video quality
+   - Use wired connection if possible
+
+4. **Permission denied errors**
+   - Ensure user is in `plugdev` group
+   - Check udev rules are applied
+   - Try running with `sudo` (not recommended for production)
+
+### Debug Commands
 ```bash
-python imu_server.py --debug
+# Check RealSense devices
+rs-enumerate-devices
+
+# Test camera access
+python3 -c "import pyrealsense2 as rs; print('RealSense OK')"
+
+# Check network connectivity
+curl http://localhost:8000/status
+
+# Monitor logs
+tail -f /var/log/syslog | grep realsense
 ```
 
-## Contributing
+## Auto-Start Service (Optional)
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+Create systemd service for automatic startup:
 
-## License
+```bash
+# Create service file
+sudo tee /etc/systemd/system/realsense-streamer.service > /dev/null <<EOF
+[Unit]
+Description=RealSense D435i Web Streamer
+After=network.target
 
-MIT License - see LICENSE file for details
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/realsense_streamer
+Environment=PATH=/home/pi/realsense_streamer/venv/bin
+ExecStart=/home/pi/realsense_streamer/venv/bin/python main.py
+Restart=always
 
-## Roadmap
+[Install]
+WantedBy=multi-user.target
+EOF
 
-- [ ] Add video streaming capability
-- [ ] Implement data compression
-- [ ] Add TCP fallback option
-- [ ] Create mobile client app
-- [ ] Add data recording/playback
-- [ ] Implement sync with external devices
+# Enable and start service
+sudo systemctl enable realsense-streamer.service
+sudo systemctl start realsense-streamer.service
 
-## Support
+# Check status
+sudo systemctl status realsense-streamer.service
+```
 
-For issues and questions, please open a GitHub issue or check the [Intel RealSense documentation](https://dev.intelrealsense.com/).
+## Features of the Web Interface
+
+- **Real-time IR video streaming** at 640×480@30fps
+- **Live IMU data display** (accelerometer & gyroscope at 200Hz)
+- **Interactive charts** with 200-point history
+- **Connection status monitoring**
+- **Performance metrics** (FPS, data rate)
+- **Responsive design** (works on mobile devices)
+- **Snapshot saving** capability
+- **Auto-reconnection** on connection loss
+
+## Advanced Customization
+
+### Add Multiple Camera Support
+Modify the `initialize_camera()` method to handle multiple devices:
+```python
+ctx = rs.context()
+devices = ctx.query_devices()
+for device in devices:
+    print(f"Found device: {device.get_info(rs.camera_info.name)}")
+```
+
+### Add Recording Capability
+Implement video recording by saving frames to video files:
+```python
+import cv2
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+out = cv2.VideoWriter('output.avi', fourcc, 30.0, (640, 480))
+```
+
+### Custom Stream Processing
+Add filters, detection algorithms, or computer vision processing:
+```python
+# Example: Add edge detection
+edges = cv2.Canny(ir_image, 50, 150)
+```
