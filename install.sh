@@ -177,28 +177,6 @@ else
     print_error "Some Python dependencies failed"
 fi
 
-# Step 10: Create systemd service (optional)
-print_status "Creating systemd service..."
-
-sudo tee /etc/systemd/system/realsense-streamer.service > /dev/null <<EOF
-[Unit]
-Description=RealSense D435i Web Streamer
-After=network.target
-
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=$PROJECT_DIR
-Environment=PATH=$PROJECT_DIR/venv/bin
-ExecStart=$PROJECT_DIR/venv/bin/python main.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-print_success "Systemd service created"
 
 # Final instructions
 echo ""
